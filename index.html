@@ -7,7 +7,7 @@
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#20c997">
-    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.jpg">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
@@ -414,9 +414,12 @@
             <div class="data-actions">
                 <button class="secondary-action-btn" id="exportBackupBtn">バックアップを書き出す</button>
                 <button class="secondary-action-btn" id="restoreBackupBtn">バックアップから復元</button>
+                <button class="secondary-action-btn full" id="importExcelBtn">Excelから記録を読み込む</button>
                 <button class="secondary-action-btn full" id="exportExcelBtn">記録をExcelで書き出す</button>
             </div>
+            <p class="help-text" style="margin-top:10px;">Excel読込は現在の記録を残したまま追加します。同じ日付がある場合は、Excel側に入っている値だけをその日の記録へ反映します。</p>
             <input type="file" id="backupFileInput" accept="application/json,.json" style="display:none;">
+            <input type="file" id="excelFileInput" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style="display:none;">
         </div>
     </div>
 
@@ -490,7 +493,7 @@
     <script>
         const STORAGE_SETTINGS = 'mintfitSettingsPro';
         const STORAGE_DATA = 'mintfitDataPro';
-        const APP_VERSION = 2;
+        const APP_VERSION = '2.1';
 
         function localDateString(date = new Date()) {
             const y = date.getFullYear();
@@ -1147,6 +1150,147 @@
             reader.readAsText(file);
         });
 
+        function normalizeHeader(value) {
+            return String(value ?? '')
+                .replace(/[\s　]/g, '')
+                .replace(/[（）]/g, m => m === '（' ? '(' : ')')
+                .toLowerCase();
+        }
+
+        function pickExcelValue(row, aliases) {
+            const normalizedAliases = aliases.map(normalizeHeader);
+            for (const [key, value] of Object.entries(row)) {
+                if (normalizedAliases.includes(normalizeHeader(key))) return value;
+            }
+            return null;
+        }
+
+        function excelDateToIso(value) {
+            if (value === null || value === undefined || value === '') return '';
+            if (value instanceof Date && !Number.isNaN(value.getTime())) {
+                return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
+            }
+            if (typeof value === 'number' && typeof XLSX !== 'undefined' && XLSX.SSF?.parse_date_code) {
+                const d = XLSX.SSF.parse_date_code(value);
+                if (d?.y && d?.m && d?.d) return `${String(d.y).padStart(4,'0')}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+            }
+            const text = String(value).trim().replace(/[./]/g, '-');
+            let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+            m = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+            if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+            const parsed = new Date(text);
+            if (!Number.isNaN(parsed.getTime())) return localDateString(parsed);
+            return '';
+        }
+
+        function toImportNumber(value) {
+            if (value === null || value === undefined || value === '') return null;
+            const cleaned = typeof value === 'string' ? value.replace(/,/g, '').trim() : value;
+            const n = Number(cleaned);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function excelRowToRecord(row) {
+            const date = excelDateToIso(pickExcelValue(row, ['日付', 'date']));
+            const record = normalizeRecord({
+                date,
+                weight: toImportNumber(pickExcelValue(row, ['体重(kg)', '体重kg', '体重', 'weight(kg)', 'weight'])),
+                bodyFat: toImportNumber(pickExcelValue(row, ['体脂肪率(%)', '体脂肪率%', '体脂肪率', 'bodyfat(%)', 'bodyfat'])),
+                calories: toImportNumber(pickExcelValue(row, ['摂取カロリー(kcal)', '摂取カロリーkcal', '摂取カロリー', 'カロリー(kcal)', 'カロリー', 'calories'])),
+                protein: toImportNumber(pickExcelValue(row, ['P(g)', 'p(g)', 'タンパク質(g)', 'たんぱく質(g)', 'タンパク質', 'たんぱく質', 'protein(g)', 'protein'])),
+                fat: toImportNumber(pickExcelValue(row, ['F(g)', 'f(g)', '脂質(g)', '脂質', 'fat(g)', 'fat'])),
+                carbs: toImportNumber(pickExcelValue(row, ['C(g)', 'c(g)', '炭水化物(g)', '炭水化物', 'carbs(g)', 'carbs'])),
+                budget: toImportNumber(pickExcelValue(row, ['その日の摂取カロリー目安(kcal)', '目標摂取カロリー(kcal)', '摂取カロリー目安(kcal)', 'budget'])),
+                notes: String(pickExcelValue(row, ['メモ', '備考', 'notes', 'note']) ?? '').trim()
+            });
+            return record;
+        }
+
+        function mergeImportedRecord(existing, imported) {
+            const merged = { ...existing };
+            ['weight','bodyFat','calories','protein','fat','carbs','budget'].forEach(key => {
+                if (imported[key] !== null && imported[key] !== undefined) merged[key] = imported[key];
+            });
+            if (imported.notes) merged.notes = imported.notes;
+            if (merged.budget == null) merged.budget = appSettings.dailyBudget;
+            if (merged.targetPg == null) merged.targetPg = appSettings.targetPg;
+            if (merged.targetFg == null) merged.targetFg = appSettings.targetFg;
+            if (merged.targetCg == null) merged.targetCg = appSettings.targetCg;
+            return normalizeRecord(merged);
+        }
+
+        document.getElementById('importExcelBtn').addEventListener('click', () => {
+            if (typeof XLSX === 'undefined') {
+                showCustomAlert('エラー', 'Excel読込ライブラリを読み込めませんでした。通信環境を確認してください。'); return;
+            }
+            document.getElementById('excelFileInput').click();
+        });
+
+        document.getElementById('excelFileInput').addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const workbook = XLSX.read(reader.result, { type: 'array', cellDates: true });
+                    if (!workbook.SheetNames?.length) throw new Error('sheet');
+                    const preferred = ['記録', '全記録', 'Dashboard', 'dashboard'];
+                    const sheetName = preferred.find(name => workbook.SheetNames.includes(name)) || workbook.SheetNames[0];
+                    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: null, raw: true });
+                    if (!rows.length) throw new Error('empty');
+
+                    let skipped = 0;
+                    const importedMap = new Map();
+                    for (const row of rows) {
+                        const rec = excelRowToRecord(row);
+                        const validDate = /^\d{4}-\d{2}-\d{2}$/.test(rec.date);
+                        const hasCore = rec.weight !== null || rec.calories !== null || rec.bodyFat !== null || rec.protein !== null || rec.fat !== null || rec.carbs !== null;
+                        if (!validDate || !hasCore || rec.date > localDateString()) { skipped++; continue; }
+                        if (rec.weight !== null && (rec.weight < 20 || rec.weight > 400)) { skipped++; continue; }
+                        if (rec.bodyFat !== null && (rec.bodyFat < 1 || rec.bodyFat > 75)) { skipped++; continue; }
+                        if (rec.calories !== null && (rec.calories < 0 || rec.calories > 10000)) { skipped++; continue; }
+                        importedMap.set(rec.date, rec);
+                    }
+
+                    const imported = [...importedMap.values()].sort((a,b) => a.date.localeCompare(b.date));
+                    if (!imported.length) {
+                        showCustomAlert('読み込めませんでした', '日付・体重・摂取カロリーなどの列を確認してください。MintFitから書き出したExcel、または「日付」「体重(kg)」「摂取カロリー(kcal)」形式のExcelに対応しています。');
+                        return;
+                    }
+
+                    const existingByDate = new Map(appData.map(d => [d.date, d]));
+                    let newCount = 0, updateCount = 0;
+                    imported.forEach(rec => existingByDate.has(rec.date) ? updateCount++ : newCount++);
+
+                    showCustomAlert(
+                        'Excelから記録を読み込む',
+                        `「${sheetName}」から${imported.length}日分を検出しました。\n新規: ${newCount}件 / 更新: ${updateCount}件${skipped ? ` / スキップ: ${skipped}行` : ''}\n\n現在の記録は消しません。同じ日付はExcel側に入っている値だけを反映します。読み込みますか？`,
+                        'confirm',
+                        () => {
+                            imported.forEach(rec => {
+                                const existing = existingByDate.get(rec.date);
+                                existingByDate.set(rec.date, mergeImportedRecord(existing || { date: rec.date }, rec));
+                            });
+                            appData = [...existingByDate.values()]
+                                .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date) && (d.weight !== null || d.calories !== null))
+                                .sort((a,b) => a.date.localeCompare(b.date));
+                            persistData();
+                            currentTablePage = 1;
+                            updateDashboard();
+                            showToast(`✓ Excelから${imported.length}日分を反映しました`);
+                        }
+                    );
+                } catch (err) {
+                    console.error(err);
+                    showCustomAlert('エラー', 'Excelファイルを読み込めませんでした。ファイル形式や列名を確認してください。');
+                } finally {
+                    e.target.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
         document.getElementById('exportExcelBtn').addEventListener('click', () => {
             if (typeof XLSX === 'undefined') {
                 showCustomAlert('エラー', 'Excel出力ライブラリを読み込めませんでした。通信環境を確認してください。'); return;
@@ -1177,19 +1321,5 @@
         loadSettingsToForm();
         updateDashboard();
     </script>
-    <script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./sw.js")
-      .then(() => {
-        console.log("MintFit Service Worker registered");
-      })
-      .catch(error => {
-        console.error("Service Worker registration failed:", error);
-      });
-  });
-}
-</script>
 </body>
 </html>
