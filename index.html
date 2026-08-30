@@ -163,6 +163,13 @@
         .quick-main-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         .quick-main-grid .input-group input { font-size:22px; font-weight:800; text-align:center; }
         .quick-date-note { text-align:center; font-size:12px; color:var(--text-muted); margin:-8px 0 16px; }
+        .record-date-control { background:var(--mint-bg); border:1px solid rgba(32,201,151,0.35); border-radius:12px; padding:12px; margin-bottom:14px; }
+        .record-date-control .input-group { margin-bottom:0; }
+        .record-date-control input[type="date"] { background:white; font-weight:800; color:var(--text-main); }
+        .date-shortcuts { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+        .date-shortcut-btn { border:1px solid #dce7e3; background:white; color:var(--text-sub); border-radius:8px; padding:9px 10px; font-size:12px; font-weight:800; cursor:pointer; }
+        .date-shortcut-btn.active { border-color:var(--mint-main); color:var(--mint-dark); background:#f7fffc; }
+        .date-shortcut-btn:active { transform:scale(0.98); }
         .details-toggle { width:100%; border:none; background:#f1f3f5; color:var(--text-sub); padding:11px; border-radius:9px; font-weight:700; cursor:pointer; margin-top:2px; }
         .optional-details { display:none; margin-top:14px; padding-top:14px; border-top:1px solid #eee; }
         .help-text { font-size:12px; line-height:1.6; color:var(--text-sub); margin:0 0 14px; }
@@ -436,6 +443,17 @@
             <h2 id="addModalTitle">今日の体重を記録</h2>
             <p class="quick-date-note" id="quickDateNote"></p>
 
+            <div class="record-date-control">
+                <div class="input-group" id="dateEditGroup">
+                    <label>📅 記録日</label>
+                    <input type="date" id="inputDate">
+                </div>
+                <div class="date-shortcuts">
+                    <button class="date-shortcut-btn" id="quickYesterdayBtn" type="button">昨日</button>
+                    <button class="date-shortcut-btn" id="quickTodayBtn" type="button">今日</button>
+                </div>
+            </div>
+
             <div class="quick-main-grid">
                 <div class="input-group">
                     <label>⚖️ 体重 (kg)</label>
@@ -450,10 +468,6 @@
             <button class="details-toggle" id="detailsToggleBtn" type="button">＋ 詳細を追加</button>
 
             <div class="optional-details" id="optionalDetails">
-                <div class="input-group" id="dateEditGroup" style="display:none;">
-                    <label>日付</label>
-                    <input type="date" id="inputDate">
-                </div>
                 <div class="input-group">
                     <label>体脂肪率 (%)</label>
                     <input type="number" id="inputBodyFat" step="0.1" inputmode="decimal" placeholder="任意" onfocus="this.select()">
@@ -778,46 +792,117 @@
 
         document.getElementById('detailsToggleBtn').addEventListener('click', () => setDetailsOpen(!detailsOpen));
 
-        function openQuickRecord(date = localDateString(), fromHistory = false) {
-            editingIndex = getRecordIndexByDate(date);
+        function dateOffsetString(days) {
+            const d = new Date();
+            d.setDate(d.getDate() + days);
+            return localDateString(d);
+        }
+
+        function updateDateShortcutState(date) {
+            document.getElementById('quickTodayBtn').classList.toggle('active', date === localDateString());
+            document.getElementById('quickYesterdayBtn').classList.toggle('active', date === dateOffsetString(-1));
+        }
+
+        function loadRecordIntoForm(date, { fromHistory = false, manageDetails = false } = {}) {
+            const today = localDateString();
+            const safeDate = date && date <= today ? date : today;
+            const isToday = safeDate === today;
+
+            editingIndex = getRecordIndexByDate(safeDate);
             const existing = editingIndex >= 0 ? appData[editingIndex] : null;
             const latestWeight = getLatestWeightRecord();
             const latestBodyFat = getLatestBodyFat();
 
-            document.getElementById('inputDate').value = date;
-            document.getElementById('inputWeight').value = existing?.weight ?? latestWeight?.weight ?? appSettings.startWeight ?? '';
-            document.getElementById('inputCalories').value = existing?.calories ?? '';
-            document.getElementById('inputBodyFat').value = existing?.bodyFat ?? latestBodyFat ?? '';
-            document.getElementById('inputP').value = existing?.protein ?? '';
-            document.getElementById('inputF').value = existing?.fat ?? '';
-            document.getElementById('inputC').value = existing?.carbs ?? '';
-            document.getElementById('inputNotes').value = existing?.notes ?? '';
-            document.getElementById('quickDateNote').textContent = fromHistory ? `${date} の記録` : `今日 ${formatShortDate(date)}｜朝は体重だけ、夜に食事を追記できます`;
-            document.getElementById('dateEditGroup').style.display = fromHistory ? 'block' : 'none';
+            const dateInput = document.getElementById('inputDate');
+            dateInput.max = today;
+            dateInput.value = safeDate;
 
-            if (fromHistory) {
-                document.getElementById('addModalTitle').textContent = '記録を編集';
-                setDetailsOpen(true);
-            } else if (!existing) {
-                document.getElementById('addModalTitle').textContent = '今日の体重を記録';
-                setDetailsOpen(false);
-            } else if (existing.calories === null) {
-                document.getElementById('addModalTitle').textContent = '今日の食事を追記';
-                setDetailsOpen(false);
+            if (existing && isToday) {
+                // 今日の記録は従来どおり、未入力の体重・体脂肪だけ直近値を補助表示する
+                document.getElementById('inputWeight').value = existing.weight ?? latestWeight?.weight ?? appSettings.startWeight ?? '';
+                document.getElementById('inputCalories').value = existing.calories ?? '';
+                document.getElementById('inputBodyFat').value = existing.bodyFat ?? latestBodyFat ?? '';
+                document.getElementById('inputP').value = existing.protein ?? '';
+                document.getElementById('inputF').value = existing.fat ?? '';
+                document.getElementById('inputC').value = existing.carbs ?? '';
+                document.getElementById('inputNotes').value = existing.notes ?? '';
+            } else if (existing) {
+                // 過去の既存記録は、その日に保存されている値だけを表示する
+                document.getElementById('inputWeight').value = existing.weight ?? '';
+                document.getElementById('inputCalories').value = existing.calories ?? '';
+                document.getElementById('inputBodyFat').value = existing.bodyFat ?? '';
+                document.getElementById('inputP').value = existing.protein ?? '';
+                document.getElementById('inputF').value = existing.fat ?? '';
+                document.getElementById('inputC').value = existing.carbs ?? '';
+                document.getElementById('inputNotes').value = existing.notes ?? '';
+            } else if (isToday) {
+                document.getElementById('inputWeight').value = latestWeight?.weight ?? appSettings.startWeight ?? '';
+                document.getElementById('inputCalories').value = '';
+                document.getElementById('inputBodyFat').value = latestBodyFat ?? '';
+                document.getElementById('inputP').value = '';
+                document.getElementById('inputF').value = '';
+                document.getElementById('inputC').value = '';
+                document.getElementById('inputNotes').value = '';
             } else {
-                document.getElementById('addModalTitle').textContent = '今日の記録を編集';
-                setDetailsOpen(false);
+                // 過去日の新規入力では、最新の体重・体脂肪を自動コピーしない
+                document.getElementById('inputWeight').value = '';
+                document.getElementById('inputCalories').value = '';
+                document.getElementById('inputBodyFat').value = '';
+                document.getElementById('inputP').value = '';
+                document.getElementById('inputF').value = '';
+                document.getElementById('inputC').value = '';
+                document.getElementById('inputNotes').value = '';
             }
 
+            if (isToday) {
+                document.getElementById('quickDateNote').textContent = `今日 ${formatShortDate(safeDate)}｜朝は体重だけ、夜に食事を追記できます`;
+                if (!existing) {
+                    document.getElementById('addModalTitle').textContent = '今日の体重を記録';
+                } else if (existing.calories === null) {
+                    document.getElementById('addModalTitle').textContent = '今日の食事を追記';
+                } else {
+                    document.getElementById('addModalTitle').textContent = '今日の記録を編集';
+                }
+            } else if (existing) {
+                document.getElementById('quickDateNote').textContent = `${formatShortDate(safeDate)}｜保存済みの記録を編集できます`;
+                document.getElementById('addModalTitle').textContent = '過去の記録を編集';
+            } else {
+                document.getElementById('quickDateNote').textContent = `${formatShortDate(safeDate)}｜入力し忘れた日の記録を追加できます`;
+                document.getElementById('addModalTitle').textContent = '過去の記録を追加';
+            }
+
+            if (manageDetails) setDetailsOpen(fromHistory);
+            updateDateShortcutState(safeDate);
+            return { existing, isToday, safeDate };
+        }
+
+        function openQuickRecord(date = localDateString(), fromHistory = false) {
+            const state = loadRecordIntoForm(date, { fromHistory, manageDetails: true });
             addModal.style.display = 'flex';
+
             setTimeout(() => {
                 if (fromHistory) return;
-                const focusTarget = !existing ? document.getElementById('inputWeight') : (existing.calories === null ? document.getElementById('inputCalories') : document.getElementById('inputWeight'));
+                const focusTarget = !state.existing
+                    ? document.getElementById('inputWeight')
+                    : (state.existing.calories === null ? document.getElementById('inputCalories') : document.getElementById('inputWeight'));
                 focusTarget.focus();
                 focusTarget.select();
             }, 80);
         }
 
+        document.getElementById('inputDate').max = localDateString();
+        document.getElementById('inputDate').addEventListener('change', (e) => {
+            const date = e.target.value;
+            if (!date) return;
+            if (date > localDateString()) {
+                showCustomAlert('エラー', '未来の日付は記録できません。');
+                loadRecordIntoForm(localDateString());
+                return;
+            }
+            loadRecordIntoForm(date);
+        });
+        document.getElementById('quickYesterdayBtn').addEventListener('click', () => loadRecordIntoForm(dateOffsetString(-1)));
+        document.getElementById('quickTodayBtn').addEventListener('click', () => loadRecordIntoForm(localDateString()));
         document.getElementById('openModalBtn').addEventListener('click', () => openQuickRecord());
         document.getElementById('closeModalBtn').addEventListener('click', () => addModal.style.display = 'none');
 
@@ -877,9 +962,12 @@
             currentTablePage = 1;
             updateDashboard();
 
-            if (!wasGoalReached && weightVal !== null && weightVal <= appSettings.targetWeight && typeof confetti === 'function') {
+            const isTodayRecord = dateVal === localDateString();
+            if (isTodayRecord && !wasGoalReached && weightVal !== null && weightVal <= appSettings.targetWeight && typeof confetti === 'function') {
                 confetti({ particleCount: 120, spread: 75, origin: { y: 0.62 }, colors: ['#20c997', '#4facfe', '#f1c40f'] });
                 showToast('🎉 目標体重に到達しました');
+            } else if (!isTodayRecord) {
+                showToast(`✓ ${formatShortDate(dateVal)} の記録を保存しました`);
             } else if (calVal !== null && weightVal !== null) {
                 showToast('✓ 今日の記録を保存しました');
             } else if (calVal !== null) {
