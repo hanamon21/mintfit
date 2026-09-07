@@ -95,6 +95,16 @@
         .filter-btn { background: none; border: none; padding: 6px 12px; font-size: 11px; font-weight: bold; color: var(--text-sub); cursor: pointer; border-radius: 6px; }
         .filter-btn.active { background: white; color: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .chart-wrapper { position: relative; width: 100%; height: 260px; }
+        .chart-axis-guide { display:flex; justify-content:space-between; gap:12px; margin:2px 2px 8px; font-size:10px; color:var(--text-muted); font-weight:700; }
+        .chart-legend { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px 12px; margin-top:14px; padding:12px; background:#f8faf9; border-radius:10px; border:1px solid #edf1ef; }
+        .chart-legend-item { display:flex; align-items:center; gap:8px; min-width:0; font-size:11px; color:var(--text-sub); font-weight:700; }
+        .legend-line { width:28px; height:0; border-top:3px solid; border-radius:2px; flex:0 0 auto; }
+        .legend-line.weight { border-color:#6366f1; }
+        .legend-line.average { border-color:#7d8582; border-top-style:dashed; }
+        .legend-line.budget { border-color:#ff9f43; border-top-style:dashed; }
+        .legend-bar { width:20px; height:12px; border-radius:4px; background:rgba(32, 201, 151, 0.72); flex:0 0 auto; }
+        .chart-help { margin-top:10px; padding:12px; border-radius:10px; background:var(--mint-bg); color:var(--text-sub); font-size:11px; line-height:1.7; }
+        .chart-help strong { color:var(--text-main); }
 
         .table-container { background-color: white; padding: 14px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 16px; }
         table { width: 100%; border-collapse: collapse; min-width: 600px; }
@@ -180,7 +190,7 @@
         .toast { position:fixed; left:50%; bottom:calc(82px + env(safe-area-inset-bottom)); transform:translate(-50%, 20px); background:rgba(35,49,40,.94); color:#fff; padding:10px 16px; border-radius:22px; font-size:12px; font-weight:700; z-index:2000; opacity:0; pointer-events:none; transition:.22s ease; white-space:nowrap; max-width:90vw; overflow:hidden; text-overflow:ellipsis; }
         .toast.show { opacity:1; transform:translate(-50%, 0); }
         .delta { font-weight:700; color:var(--text-sub); }
-        @media (max-width: 380px) { .quick-main-grid { grid-template-columns:1fr; } .data-actions { grid-template-columns:1fr; } .secondary-action-btn.full { grid-column:auto; } }
+        @media (max-width: 380px) { .quick-main-grid { grid-template-columns:1fr; } .data-actions { grid-template-columns:1fr; } .secondary-action-btn.full { grid-column:auto; } .chart-legend { grid-template-columns:1fr; } }
         .alert-modal .modal-content { border-radius: 16px; align-self: center; margin: 20px; padding: 24px; max-height: 80vh;}
     </style>
 </head>
@@ -189,7 +199,7 @@
     <!-- 🏠 ホーム画面 -->
     <div id="pageHome" class="app-page active">
         <div class="header">
-            <h1>📈 MintFit <span style="font-size: 12px; color: var(--mint-dark); background: var(--mint-bg); padding: 2px 6px; border-radius: 4px;">PRO</span></h1>
+            <h1>📈 MintFit <span style="font-size: 12px; color: var(--mint-dark); background: var(--mint-bg); padding: 2px 6px; border-radius: 4px;">PRO</span><span style="font-size:10px;color:var(--text-muted);font-weight:700;">v2.2</span></h1>
             <button class="add-btn" id="openModalBtn">＋ 爆速記録</button>
         </div>
 
@@ -296,7 +306,7 @@
 
         <div class="chart-section">
             <div class="chart-controls">
-                <h2>📊 体重・7日平均 & カロリー推移</h2>
+                <h2>📊 体重・7日平均・摂取カロリー</h2>
                 <div class="filter-group">
                     <button class="filter-btn active" onclick="changePeriod(14, this)">14日</button>
                     <button class="filter-btn" onclick="changePeriod(30, this)">30日</button>
@@ -304,16 +314,24 @@
                     <button class="filter-btn" onclick="changePeriod(0, this)">全期間</button>
                 </div>
             </div>
+            <div class="chart-axis-guide">
+                <span>← 左の目盛：摂取カロリー（kcal）</span>
+                <span>右の目盛：体重（kg） →</span>
+            </div>
             <div class="chart-wrapper">
                 <canvas id="myChart"></canvas>
             </div>
-            <div style="font-size:10px; color:var(--text-muted); margin-top:12px; text-align:center; display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
-                <span>➖ 体重</span>
-                <span style="color:#2ecc71;">➖ 除脂肪体重</span>
-                <span style="color:#e74c3c;">➖ 脂肪量</span>
+            <div class="chart-legend" aria-label="グラフの見方">
+                <div class="chart-legend-item"><span class="legend-line weight"></span><span>その日の体重</span></div>
+                <div class="chart-legend-item"><span class="legend-line average"></span><span>7日平均体重</span></div>
+                <div class="chart-legend-item"><span class="legend-bar"></span><span>その日の摂取カロリー</span></div>
+                <div class="chart-legend-item"><span class="legend-line budget"></span><span>摂取カロリー目安</span></div>
             </div>
-            <div style="font-size:10px; color:var(--text-muted); margin-top:8px; text-align:center; line-height:1.5;">
-                カロリーの棒は日々の記録です。色で「成功・失敗」の判定はしません。
+            <div class="chart-help">
+                <strong>グラフの見方：</strong>紫の線は毎日の体重、灰色の点線は直近7日間の体重を平均した「7日平均」です。
+                日々の体重は水分量や食事などでも動くため、長い目で流れを見るときは7日平均も参考にします。
+                ミント色の棒はその日の摂取カロリー、オレンジの点線は設定した1日の摂取カロリー目安です。
+                <strong>左の目盛はkcal、右の目盛はkg</strong>として見てください。
             </div>
         </div>
     </div>
@@ -507,7 +525,7 @@
     <script>
         const STORAGE_SETTINGS = 'mintfitSettingsPro';
         const STORAGE_DATA = 'mintfitDataPro';
-        const APP_VERSION = '2.1';
+        const APP_VERSION = '2.2';
 
         function localDateString(date = new Date()) {
             const y = date.getFullYear();
@@ -1161,8 +1179,6 @@
             const moving = fData.map(d => getSevenDayAverage(d.date).avg);
             const calories = fData.map(d => d.calories);
             const budgets = fData.map(d => d.budget ?? appSettings.dailyBudget);
-            const lean = fData.map(d => d.weight !== null && d.bodyFat !== null ? d.weight * (1 - d.bodyFat / 100) : null);
-            const fatM = fData.map(d => d.weight !== null && d.bodyFat !== null ? d.weight * (d.bodyFat / 100) : null);
             const validWeights = weights.filter(v => v !== null);
             const yMin = validWeights.length ? Math.min(Number(appSettings.targetWeight) - 3, Math.min(...validWeights) - 2) : Number(appSettings.targetWeight) - 5;
 
@@ -1171,21 +1187,41 @@
                 data: {
                     labels: dates,
                     datasets: [
-                        { type: 'line', label: '7日平均', data: moving, borderColor: '#9aa0a6', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
-                        { type: 'line', label: '体重', data: weights, borderColor: '#6366f1', backgroundColor: 'white', borderWidth: 2, pointRadius: 3, yAxisID: 'y' },
-                        { type: 'line', label: '除脂肪', data: lean, borderColor: '#2ecc71', backgroundColor: 'white', borderWidth: 2, pointRadius: 2, yAxisID: 'y' },
-                        { type: 'line', label: '脂肪量', data: fatM, borderColor: '#e74c3c', backgroundColor: 'white', borderWidth: 2, pointRadius: 2, yAxisID: 'y' },
-                        { type: 'line', label: '摂取カロリー目安', data: budgets, borderColor: '#b0b8b5', borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1' },
-                        { type: 'bar', label: '摂取カロリー', data: calories, backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 4, yAxisID: 'y1' }
+                        { type: 'bar', label: '摂取カロリー', data: calories, backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 4, yAxisID: 'y1', order: 4 },
+                        { type: 'line', label: '摂取カロリー目安', data: budgets, borderColor: '#ff9f43', borderDash: [7, 5], borderWidth: 2, pointRadius: 0, yAxisID: 'y1', order: 3 },
+                        { type: 'line', label: '7日平均体重', data: moving, borderColor: '#7d8582', borderDash: [5, 5], borderWidth: 2.5, pointRadius: 0, spanGaps: true, yAxisID: 'y', order: 2 },
+                        { type: 'line', label: 'その日の体重', data: weights, borderColor: '#6366f1', backgroundColor: 'white', borderWidth: 2.5, pointRadius: 3.5, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y', order: 1 }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    if (value === null || value === undefined) return `${label}: 未入力`;
+                                    if (context.dataset.yAxisID === 'y1') return `${label}: ${Math.round(value).toLocaleString()} kcal`;
+                                    return `${label}: ${Number(value).toFixed(1)} kg`;
+                                }
+                            }
+                        }
+                    },
                     scales: {
-                        y: { type: 'linear', position: 'right', min: yMin },
-                        y1: { type: 'linear', position: 'left', suggestedMax: 3000, grid: { drawOnChartArea: false } },
+                        y: {
+                            type: 'linear', position: 'right', min: yMin,
+                            title: { display: true, text: '体重 (kg)', color: '#666', font: { size: 10, weight: 'bold' } },
+                            ticks: { callback: (value) => Number(value).toFixed(1) }
+                        },
+                        y1: {
+                            type: 'linear', position: 'left', suggestedMax: 3000, grid: { drawOnChartArea: false },
+                            title: { display: true, text: '摂取カロリー (kcal)', color: '#666', font: { size: 10, weight: 'bold' } },
+                            ticks: { callback: (value) => Number(value).toLocaleString() }
+                        },
                         x: { ticks: { font: { size: 9 }, maxRotation: 45 } }
                     }
                 }
@@ -1406,8 +1442,29 @@
             showToast('✓ Excelを書き出しました');
         });
 
+        async function checkForAppUpdate() {
+            try {
+                const response = await fetch(`./index.html?update_check=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                const latestHtml = await response.text();
+                const match = latestHtml.match(/const APP_VERSION = ['"]([^'"]+)['"]/);
+                const latestVersion = match?.[1];
+                if (!latestVersion || latestVersion === APP_VERSION) return;
+
+                showCustomAlert(
+                    'MintFitの更新があります',
+                    `新しいバージョン（v${latestVersion}）があります。最新版を読み込みますか？\n※入力済みの記録はブラウザ内に保存されていますが、念のため定期的なバックアップをおすすめします。`,
+                    'confirm',
+                    () => { window.location.replace(`./?v=${encodeURIComponent(latestVersion)}&t=${Date.now()}`); }
+                );
+            } catch (_) {
+                // オフライン時などは何もしない
+            }
+        }
+
         loadSettingsToForm();
         updateDashboard();
+        setTimeout(checkForAppUpdate, 1200);
     </script>
 </body>
 </html>
